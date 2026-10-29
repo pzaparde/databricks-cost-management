@@ -1,0 +1,12 @@
+# Bundle deployment state
+.databricks/
+
+# Company-specific targets (hosts, IDs, emails) - never commit
+targets/*.yml
+
+# Python / IDE
+__pycache__/
+*.pyc
+.venv/
+.vscode/
+.idea/

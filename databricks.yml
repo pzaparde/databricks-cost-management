@@ -1,0 +1,121 @@
+# =====================================================================
+# Cost Management Accelerator - Declarative Automation Bundle
+# Generic, company-agnostic Databricks + cloud cost solution.
+# Deploy to any workspace by editing ONLY the target variables below:
+#   databricks bundle deploy -t <target>
+#   databricks bundle run cost_management_refresh -t <target>
+# Prerequisite: the target catalog exists. The schema is created by the setup task if missing.
+# =====================================================================
+bundle:
+  name: cost_management_accelerator
+
+include:
+  - resources/*.yml
+  # Optional company-specific targets kept OUT of source control (see .gitignore),
+  # e.g. targets/my_company.yml. No match is fine.
+  - targets/*.yml
+
+variables:
+  # ---- Location -------------------------------------------------------
+  catalog:
+    description: Unity Catalog catalog that holds all accelerator objects.
+  schema:
+    description: Schema for accelerator tables, views and the landing volume (created by the setup task if it does not exist).
+    default: cost_management
+  landing_volume:
+    description: UC volume (inside catalog.schema) where cloud cost files are dropped.
+    default: cloud_cost_landing
+
+  # ---- Compute / identity --------------------------------------------
+  warehouse_id:
+    description: SQL warehouse for setup SQL, dashboard and alerts.
+  alert_emails:
+    description: Recipients for job failure emails (list).
+    type: complex
+    default: []
+  alert_email:
+    description: Recipient of the data-freshness alert.
+    default: ${workspace.current_user.userName}
+
+  # ---- Databricks cost logic -----------------------------------------
+  pricing_mode:
+    description: >
+      account_with_list_fallback = negotiated system.billing.account_prices per SKU,
+      falling back to system.billing.list_prices where no account price exists.
+      list = list prices only.
+    default: account_with_list_fallback
+  list_price_discount_pct:
+    description: Discount (0-100) applied ONLY when a SKU falls back to list price.
+    default: 0
+  additional_discount_pct:
+    description: Optional extra discount (0-100) applied to all Databricks cost (e.g. credits). Default 0.
+    default: 0
+  history_start_date:
+    description: First usage_date to load on initial run.
+    default: "2025-01-01"
+  lookback_days:
+    description: Days re-read on every run to capture late / restated billing records.
+    default: 7
+  force_full_reload:
+    description: true = reload bronze billing from history_start_date on the next run (first run does this automatically).
+    default: "false"
+  workspace_filter:
+    description: Comma-separated workspace IDs to include, or ALL.
+    default: ALL
+  currency:
+    description: Reporting currency label.
+    default: USD
+  load_sample_data:
+    description: true = copy sample_data/cloud_cost_landing CSVs into the landing volume on setup (demo only).
+    default: "false"
+
+  # ---- Cloud (non-Databricks) cost -----------------------------------
+  control_total_tolerance_pct:
+    description: Allowed % gap between file 'Total' row and sum of services before a file is quarantined.
+    default: 0.5
+  freshness_due_day:
+    description: Day of month by which last month's cloud cost file must be uploaded.
+    default: 5
+  billing_stale_days:
+    description: Freshness alert fires when the latest Databricks usage_date is older than this many days.
+    default: 3
+
+  # ---- Scheduling ----------------------------------------------------
+  schedule_cron:
+    description: Quartz cron for the daily refresh job.
+    default: "0 0 6 * * ?"
+  alert_cron:
+    description: Quartz cron for the freshness alert evaluation.
+    default: "0 0 9 * * ?"
+  timezone:
+    description: Timezone for the schedule.
+    default: UTC
+
+targets:
+  # Quick start / demo: deploys into the workspace you are authenticated to, as you,
+  # with sample cloud cost data. Pass the 3 required values on the command line:
+  #   databricks bundle deploy -t demo --var="catalog=<catalog>" --var="schema=<existing_schema>" --var="warehouse_id=<id>"
+  # Development mode prefixes resource names with [dev <user>] and pauses schedules.
+  demo:
+    mode: development
+    default: true
+    variables:
+      load_sample_data: "true"
+
+  # Template for any new company / workspace - copy into targets/<company>.yml and fill in.
+  customer_template:
+    mode: production
+    workspace:
+      host: https://<your-workspace-host>
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    # Recommended for production: run as a service principal (uncomment).
+    # Omit to run as the deploying user.
+    # run_as:
+    #   service_principal_name: <service_principal_application_id>
+    variables:
+      catalog: <catalog>
+      schema: <existing_schema>
+      warehouse_id: <warehouse_id>
+      alert_email: <finops-team@company.com>
+      alert_emails:
+        - <finops-team@company.com>
